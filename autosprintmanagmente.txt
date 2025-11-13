@@ -1,0 +1,139 @@
+--// Auto Sprint When Killer is Near (Customizable, Smooth & Hysteresis)
+
+print("✅ Auto Sprint Reactive v3 loaded")
+
+--// ====== CONFIGURAÇÕES ======
+local DISTANCE_THRESHOLD = 110     -- distância mínima (studs) pra reagir
+local SPEED_THRESHOLD = 12        -- velocidade mínima do killer pra acionar o sprint
+local HYSTERESIS_TIME = 0.1      -- tempo que mantém o sprint ativo após killer parar
+local DECISION_INTERVAL = 0.1     -- intervalo de decisão (em segundos)
+--// ===========================
+
+--// Serviços
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+--// Player e dados básicos
+local player = Players.LocalPlayer
+repeat task.wait() until player.Character
+local char = player.Character
+local hrp = char:WaitForChild("HumanoidRootPart")
+
+--// Caminhos e binds
+local killersFolder = Workspace:WaitForChild("Players"):WaitForChild("Killers")
+local sprintModule = require(ReplicatedStorage.Systems.Character.Game.Sprinting)
+local keybind = player:WaitForChild("PlayerData")
+	:WaitForChild("Settings")
+	:WaitForChild("Keybinds")
+	:WaitForChild("Sprinting").Value
+
+--// Variáveis
+local sprinting = false
+local lastPositions = {}
+local velocityBuffer = {}
+local lastDecision = 0
+local lastThreatTime = 0
+local activeThreat = false
+
+--// Funções auxiliares
+local function distance(a, b)
+	return (a.Position - b.Position).Magnitude
+end
+
+local function getSpeed(obj)
+	local now = tick()
+	local lastData = lastPositions[obj]
+	local pos = obj.Position
+
+	if not lastData then
+		lastPositions[obj] = {pos = pos, t = now}
+		return 0
+	end
+
+	local dt = now - lastData.t
+	if dt <= 0 then
+		return 0
+	end
+
+	local speed = (pos - lastData.pos).Magnitude / dt
+	lastPositions[obj] = {pos = pos, t = now}
+
+	local prev = velocityBuffer[obj] or speed
+	local smooth = (prev * 0.6) + (speed * 0.4)
+	velocityBuffer[obj] = smooth
+	return smooth
+end
+
+--// Loop principal
+RunService.Heartbeat:Connect(function()
+	if not hrp or not char or not char.Parent then return end
+
+-- Bloqueia corrida se stamina estiver muito baixa
+if sprintModule.Stamina < 1 then
+	if sprinting then
+		VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[keybind], false, game)
+		sprinting = false
+	end
+	getgenv().lowStaminaTime = tick()
+	return
+end
+
+-- Espera 1 segundo de regeneração antes de permitir correr de novo
+if getgenv().lowStaminaTime and (tick() - getgenv().lowStaminaTime) < 0.5 then
+	return
+end
+
+
+	-- Intervalo de decisão
+	if tick() - lastDecision < DECISION_INTERVAL then return end
+	lastDecision = tick()
+
+	local threatDetected = false
+	local closestDist = math.huge
+	local highestSpeed = 0
+
+	for _, killer in ipairs(killersFolder:GetChildren()) do
+		local krp = killer:FindFirstChild("HumanoidRootPart")
+		if krp then
+			local dist = distance(hrp, krp)
+			if dist <= DISTANCE_THRESHOLD then
+				local spd = getSpeed(krp)
+				if spd > highestSpeed then
+					highestSpeed = spd
+				end
+				if dist <= DISTANCE_THRESHOLD and spd > SPEED_THRESHOLD then
+					threatDetected = true
+					closestDist = dist
+				end
+			end
+		end
+	end
+
+	-- Histerese (mantém ativo após killer parar)
+	if threatDetected then
+		lastThreatTime = tick()
+		activeThreat = true
+	elseif tick() - lastThreatTime > HYSTERESIS_TIME then
+		activeThreat = false
+	end
+
+	-- Debug (só mostra se houver detecção real)
+	if closestDist < math.huge then
+		print(string.format(
+			"[AutoSprint] Nearest: %.1f studs | Speed: %.1f | Sprinting: %s",
+			closestDist, highestSpeed, tostring(sprinting)
+		))
+	end
+
+	-- Controle de sprint
+	if activeThreat and not sprinting then
+		VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[keybind], false, game)
+		sprinting = true
+	elseif not activeThreat and sprinting then
+		VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[keybind], false, game)
+		sprinting = false
+	end
+end)
