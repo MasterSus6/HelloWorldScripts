@@ -1,0 +1,181 @@
+--// Serviços
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local PlayerGui = player:WaitForChild("PlayerGui")
+
+--// GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoAttackGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 180, 0, 80)
+Frame.Position = UDim2.new(0.05, 0, 0.4, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Frame.Active = true
+Frame.Draggable = true
+Frame.Parent = ScreenGui
+
+local Title = Instance.new("TextLabel")
+Title.Text = "Auto Attack"
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 18
+Title.Parent = Frame
+
+local Toggle = Instance.new("TextButton")
+Toggle.Size = UDim2.new(0.8, 0, 0, 30)
+Toggle.Position = UDim2.new(0.1, 0, 0.55, 0)
+Toggle.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
+Toggle.Text = "Desativado"
+Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+Toggle.Font = Enum.Font.SourceSansBold
+Toggle.TextSize = 16
+Toggle.Parent = Frame
+
+--// Variável de controle
+local scriptEnabled = false
+
+Toggle.MouseButton1Click:Connect(function()
+	scriptEnabled = not scriptEnabled
+	if scriptEnabled then
+		Toggle.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+		Toggle.Text = "Ativado"
+	else
+		Toggle.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
+		Toggle.Text = "Desativado"
+	end
+end)
+
+--// Bloqueia dano recebido (metatable)
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+local old = mt.__namecall
+mt.__namecall = newcclosure(function(self, ...)
+	local method = getnamecallmethod()
+	if method == "FireServer" then
+		local remoteName = tostring(self)
+		if remoteName == "PlayerDamage" or remoteName == "DamageEvent" then
+			return nil
+		end
+	end
+	return old(self, ...)
+end)
+
+local oldFireServer
+oldFireServer = hookfunction(Instance.new("RemoteEvent").FireServer, function(self, ...)
+	local remoteName = tostring(self)
+	if remoteName == "PlayerDamage" or remoteName == "DamageEvent" then
+		return nil
+	end
+	return oldFireServer(self, ...)
+end)
+
+--// Variáveis e Funções
+local backpack
+local character
+local HRP
+
+local wantedNames = {"Paintball Gun", "Sword", "Slingshot", "Firebrand", "BB Gun", "Scatterblaster"}
+
+local function getAnyPart(enemy)
+	return enemy:FindFirstChild("Torso")
+		or enemy:FindFirstChild("UpperTorso")
+		or enemy:FindFirstChild("HumanoidRootPart")
+		or enemy:FindFirstChild("Head")
+		or enemy:FindFirstChildWhichIsA("BasePart")
+end
+
+local function teleportToEnemy(enemy)
+	local targetPart = getAnyPart(enemy)
+	if targetPart and HRP then
+		local offset = Vector3.new(0, 4, 0)
+		HRP.CFrame = targetPart.CFrame * CFrame.new(offset)
+	end
+end
+
+local function equipAllWanted()
+	if not backpack or not character then return end
+	for _, name in ipairs(wantedNames) do
+		local tool = backpack:FindFirstChild(name)
+		if tool and tool:IsA("Tool") then
+			tool.Parent = character
+		end
+	end
+end
+
+local function attackEnemy(enemy)
+	if not HRP or not character then return end
+	local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return end
+	local targetPart = getAnyPart(enemy)
+	if not targetPart then return end
+	teleportToEnemy(enemy)
+
+	local direction = (targetPart.Position - HRP.Position).Unit
+
+	local swordArgs = {"Slash", humanoid, direction, targetPart, false, {
+		AttackDash = true,
+		ShadowDash = true,
+		Overhead = true,
+		Backstab = true
+	}}
+
+	local gunArgs = {humanoid, HRP.Position, targetPart.Position, targetPart, {
+		Color = BrickColor.new(21),
+		Quickdraw = true,
+		ObjectBreak = true
+	}}
+
+	local shotArgs = {humanoid, HRP.Position, targetPart.Position, targetPart}
+	local fireArgs = {"Slash", humanoid, direction, targetPart, false, {AttackDash=true, Overhead=true, Backstab=true}}
+	local bbArgs = {humanoid, HRP.Position, targetPart.Position, targetPart, {Teammate={character.Name}, Stacks=9e9, ObjectBreak=true, Quickdraw=true}}
+	local scArgs = {humanoid, HRP.Position, targetPart.Position, targetPart, {AttackType="Default", ObjectBreak=true, Quickdraw=true, Stage=9e9, FireTime=0}}
+
+	local tools = {
+		["Sword"] = swordArgs,
+		["Paintball Gun"] = gunArgs,
+		["Slingshot"] = shotArgs,
+		["Firebrand"] = fireArgs,
+		["BB Gun"] = bbArgs,
+		["Scatterblaster"] = scArgs,
+	}
+
+	for name, args in pairs(tools) do
+		local tool = character:FindFirstChild(name)
+		if tool and tool:FindFirstChild("VerifyHit") then
+			tool.VerifyHit:FireServer(unpack(args))
+		end
+	end
+end
+
+--// Atualiza variáveis quando o personagem renasce
+local function updateCharacter(newChar)
+	character = newChar
+	backpack = player:WaitForChild("Backpack")
+	HRP = character:WaitForChild("HumanoidRootPart")
+end
+
+-- Executa na inicialização e reconecta sempre
+updateCharacter(player.Character or player.CharacterAdded:Wait())
+player.CharacterAdded:Connect(updateCharacter)
+
+--// Loop principal
+RunService.Heartbeat:Connect(function()
+	if not scriptEnabled or not character or not HRP then return end
+	equipAllWanted()
+	local enemiesFolder = workspace:FindFirstChild("Enemies")
+	if not enemiesFolder then return end
+	for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+		if enemy:IsA("Model") and enemy:FindFirstChildOfClass("Humanoid") and not enemy:FindFirstChild("BeaconShield") then
+			local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+			if humanoid and humanoid.Health > 0 then
+				attackEnemy(enemy)
+			end
+		end
+	end
+end)
