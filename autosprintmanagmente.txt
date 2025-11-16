@@ -4,10 +4,10 @@ print("[🚀 Auto Sprint v4.2] Loading...")
 -- CONFIG
 local DISTANCE_THRESHOLD = 110
 local SPEED_THRESHOLD = 12
-local HYSTERESIS_TIME = 0.1
-local DECISION_INTERVAL = 0.08
+local HYSTERESIS_TIME = 0.01
+local DECISION_INTERVAL = 0.01
 local MIN_STAMINA = 1
-local STAMINA_RECOVER_TIME = 0.5
+local STAMINA_RECOVER_TIME = 1
 local AUTO_SPRINT_TAP = true
 local TOGGLE_KEY = Enum.KeyCode.C
 
@@ -206,7 +206,7 @@ local function getSpeed(part)
 	if dt <= 0 then return velCache[part] end
 
 	local raw = (pos - last.pos).Magnitude / dt
-	local smoothed = velCache[part] * 0.55 + raw * 0.45
+	local smoothed = velCache[part] * 0.2 + raw * 0.8
 
 	-- reject absurd spikes
 	if smoothed > 400 then smoothed = velCache[part] end
@@ -295,7 +295,7 @@ if stamina == 100 and AUTO_SPRINT_TAP then
 		sprinting = true
 	end
 	-- lock sprint for 0.5s without blocking the script
-	staminaLowTime = now + 0.5
+	staminaLowTime = now + STAMINA_RECOVER_TIME
 	return
 end
 
@@ -374,4 +374,3 @@ UserInputService.InputBegan:Connect(function(i, g)
 end)
 
 print("[🚀 Auto Sprint Reactive v4.2] Done!")
-
