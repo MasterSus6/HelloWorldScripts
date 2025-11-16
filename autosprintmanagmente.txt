@@ -37,6 +37,108 @@ local lastDecision = 0
 local lastThreat = 0
 local staminaLowTime = 0
 
+--========================================================--
+--   CLEAN GUI TOGGLE for Auto Sprint v4.2  (anti-dupe)   --
+--========================================================--
+
+-- evita duas execuções da GUI
+if getgenv().AS_GUI_LOADED then
+    warn("AutoSprint GUI já carregada. Abortando duplicata.")
+    return
+end
+getgenv().AS_GUI_LOADED = true
+
+-- usa a variável 'autoOn' do script principal
+getgenv().AUTOSPRINT_TOGGLE = getgenv().AUTOSPRINT_TOGGLE or true
+
+-- SERVICES
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+
+-- GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoSprintGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- MAIN FRAME
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 200, 0, 70)
+Frame.Position = UDim2.new(0.5, -100, 0.8, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Frame.BorderSizePixel = 0
+Frame.BackgroundTransparency = 0.15
+Frame.Parent = ScreenGui
+
+-- rounded corners
+Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 12)
+
+-- DRAG
+local dragging, dragStart, startPos
+Frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = Frame.Position
+    end
+end)
+Frame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- TITLE
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 28)
+Title.Position = UDim2.new(0, 0, 0, 0)
+Title.Text = "Auto Sprint"
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.BackgroundTransparency = 1
+Title.Parent = Frame
+
+-- BUTTON
+local Button = Instance.new("TextButton")
+Button.Size = UDim2.new(1, -20, 0, 30)
+Button.Position = UDim2.new(0, 10, 0, 32)
+Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Button.TextColor3 = Color3.new(1, 1, 1)
+Button.Font = Enum.Font.Gotham
+Button.TextSize = 16
+Button.Text = getgenv().AUTOSPRINT_TOGGLE and "Auto Sprint: ON" or "Auto Sprint: OFF"
+Button.Parent = Frame
+Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 10)
+
+-- BUTTON ANIMATION
+local function animate(btn, active)
+    local targetColor = active and Color3.fromRGB(40, 180, 60) or Color3.fromRGB(180, 50, 50)
+    TweenService:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Sine), {
+        BackgroundColor3 = targetColor
+    }):Play()
+end
+
+-- apply color on load
+animate(Button, getgenv().AUTOSPRINT_TOGGLE)
+
+-- CLICK HANDLER
+Button.MouseButton1Click:Connect(function()
+    getgenv().AUTOSPRINT_TOGGLE = not getgenv().AUTOSPRINT_TOGGLE
+    getgenv().autoOn = getgenv().AUTOSPRINT_TOGGLE  -- comunica com o script principal
+
+    Button.Text = getgenv().AUTOSPRINT_TOGGLE and "Auto Sprint: ON" or "Auto Sprint: OFF"
+    animate(Button, getgenv().AUTOSPRINT_TOGGLE)
+end)
+
 ---------------------------------------------------------------------
 -- HELPERS
 ---------------------------------------------------------------------
@@ -272,3 +374,4 @@ UserInputService.InputBegan:Connect(function(i, g)
 end)
 
 print("[🚀 Auto Sprint Reactive v4.2] Done!")
+
