@@ -1,0 +1,291 @@
+--// ================= CLEAN OLD =================
+if getgenv().BackstabGUI_LOADED then
+    if getgenv().BackstabGUI then
+        getgenv().BackstabGUI:Destroy()
+    end
+    for k,v in pairs(getgenv()) do
+        if typeof(v) == "RBXScriptConnection" then
+            v:Disconnect()
+        end
+    end
+end
+getgenv().BackstabGUI_LOADED = true
+
+--// ================= SERVICES =================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+--// ================= PLAYER =================
+local LP = Players.LocalPlayer
+local Char = LP.Character or LP.CharacterAdded:Wait()
+LP.CharacterAdded:Connect(function(c)
+    Char = c
+end)
+
+--// ================= PATHS =================
+local Spectating = workspace.Players.Spectating
+local Remote = ReplicatedStorage.Modules.Network.RemoteEvent
+local CooldownLabel =
+    LP.PlayerGui.MainUI.AbilityContainer.Dagger:WaitForChild("CooldownTime")
+
+--// ================= SETTINGS =================
+local AUTO_RANGE = 4.5
+local MANUAL_RANGE = 13
+local MAP_EXTRA_HOLD = 0.15
+local WINDUP = 0.1
+local BEHIND_DIST = 2.8
+local MIN_HP = 15
+local ANTI_RANGE = 13
+
+local autoOn, manualOn, mapWideOn, antiOn, allowLowHP, mapWideBusy, mapWideBusy = false,false,false,false,false,false,false
+local mapIndex = 1
+
+--// ================= ARGS =================
+local daggerArgs = {
+    "UseActorAbility",
+    { buffer.fromstring("\"Dagger\"") }
+}
+
+--// ================= UTILS =================
+local function hrp(m)
+    return m and m:FindFirstChild("HumanoidRootPart")
+end
+
+local function hum(m)
+    return m and m:FindFirstChildWhichIsA("Humanoid")
+end
+
+local function cooldownReady()
+    return CooldownLabel.Text == ""
+end
+
+local function validTarget(h)
+    local humanoid = hum(h.Parent)
+    if not humanoid then return false end
+
+    if allowLowHP then
+        return humanoid.Health > 0
+    else
+        return humanoid.Health > MIN_HP
+    end
+end
+
+local function getTargets()
+    local t = {}
+    for _, o in ipairs(Spectating:GetChildren()) do
+        local model = o:IsA("Model") and o or o.Value
+        local h = hrp(model)
+        if h and h.Parent ~= Char and validTarget(h) then
+            table.insert(t, h)
+        end
+    end
+    return t
+end
+
+local function validTarget_NoHP(h)
+    local humanoid = hum(h.Parent)
+    return humanoid and humanoid.Health > 0
+end
+
+local function getTargets_NoHP()
+    local t = {}
+    for _, o in ipairs(Spectating:GetChildren()) do
+        local model = o:IsA("Model") and o or o.Value
+        local h = hrp(model)
+        if h and h.Parent ~= Char and validTarget_NoHP(h) then
+            table.insert(t, h)
+        end
+    end
+    return t
+end
+
+local function closestTarget(range)
+    local self = hrp(Char)
+    if not self then return end
+
+    local best, dist
+    for _, t in ipairs(getTargets_NoHP()) do
+        local d = (self.Position - t.Position).Magnitude
+        if d <= range and (not dist or d < dist) then
+            best, dist = t, d
+        end
+    end
+    return best
+end
+
+local function tpBehind(self, target, dur)
+    local start = tick()
+    while tick() - start < dur do
+        if not target.Parent then break end
+        local look = target.CFrame.LookVector
+        local pos = target.Position - look * BEHIND_DIST
+        self.CFrame = CFrame.new(pos, target.Position)
+        RunService.Heartbeat:Wait()
+    end
+end
+
+--// ================= AUTO =================
+getgenv().AutoConn = RunService.Heartbeat:Connect(function()
+    if not autoOn or not cooldownReady() then return end
+    if closestTarget(AUTO_RANGE) then
+        Remote:FireServer(unpack(daggerArgs))
+    end
+end)
+
+--// ================= MANUAL TP =================
+getgenv().ManualConn = RunService.Heartbeat:Connect(function()
+    if not manualOn or not cooldownReady() then return end
+    local target = closestTarget(MANUAL_RANGE)
+    if not target then return end
+
+    local self = hrp(Char)
+    if not self then return end
+
+    Remote:FireServer(unpack(daggerArgs))
+    tpBehind(self, target, WINDUP + 0.2)
+end)
+
+--// ================= MAP WIDE =================
+getgenv().MapWideConn = RunService.Heartbeat:Connect(function()
+    if not mapWideOn then
+        lastCooldownEmpty = false
+        return
+    end
+
+    local cooldownEmpty = cooldownReady()
+
+    -- só dispara quando o cooldown ACABA (edge detect)
+    if not cooldownEmpty or lastCooldownEmpty or mapWideBusy then
+        lastCooldownEmpty = cooldownEmpty
+        return
+    end
+
+    lastCooldownEmpty = true
+    mapWideBusy = true
+
+    local list = getTargets()
+    if #list == 0 then
+        mapWideBusy = false
+        return
+    end
+
+    if mapIndex > #list then
+        mapIndex = 1
+    end
+
+    local target = list[mapIndex]
+    mapIndex += 1
+
+    local self = hrp(Char)
+    if not self or not target.Parent then
+        mapWideBusy = false
+        return
+    end
+
+    -- ativa habilidade UMA VEZ
+    Remote:FireServer(unpack(daggerArgs))
+
+    -- TP contínuo durante windup
+    tpBehind(self, target, WINDUP + MAP_EXTRA_HOLD)
+
+    -- espera o cooldown realmente começar
+    task.delay(0.1, function()
+        mapWideBusy = false
+    end)
+end)
+
+--// ================= ANTI BACKSTAB =================
+getgenv().AntiConn = RunService.Heartbeat:Connect(function()
+    if not antiOn then return end
+
+    local self = hrp(Char)
+    if not self then return end
+
+    local selfPos = self.Position
+
+    local closest, dist
+
+    for _, t in ipairs(getTargets_NoHP()) do
+        local tPos = t.Position
+        local flatTargetPos = Vector3.new(tPos.X, selfPos.Y, tPos.Z)
+
+        local d = (selfPos - flatTargetPos).Magnitude
+        if d <= ANTI_RANGE and (not dist or d < dist) then
+            closest, dist = flatTargetPos, d
+        end
+    end
+
+    if closest then
+        self.CFrame = CFrame.new(selfPos, closest)
+    end
+end)
+
+--// ================= GUI =================
+local gui = Instance.new("ScreenGui", game.CoreGui)
+getgenv().BackstabGUI = gui
+gui.Name = "BackstabGUI"
+
+local f = Instance.new("Frame", gui)
+f.Size = UDim2.fromOffset(240, 310)
+f.Position = UDim2.fromScale(0.4,0.4)
+f.BackgroundColor3 = Color3.fromRGB(25,25,25)
+f.Active, f.Draggable = true, true
+Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
+
+local function btn(y, txt)
+    local b = Instance.new("TextButton", f)
+    b.Position = UDim2.fromOffset(10,y)
+    b.Size = UDim2.fromOffset(220,40)
+    b.Text = txt
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 14
+    b.TextColor3 = Color3.new(1,1,1)
+    b.BackgroundColor3 = Color3.fromRGB(45,45,45)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
+    return b
+end
+
+local title = Instance.new("TextLabel", f)
+title.Size = UDim2.new(1,0,0,30)
+title.Text = "Backstab Control"
+title.BackgroundTransparency = 1
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.TextColor3 = Color3.new(1,1,1)
+
+local b1 = btn(40,"AUTO: OFF")
+local b2 = btn(90,"MANUAL TP: OFF")
+local b3 = btn(140,"MAP-WIDE TP: OFF")
+local b4 = btn(190,"ANTI BACKSTAB: OFF")
+local b5 = btn(240, "LOW HP: BLOCKED")
+
+b1.MouseButton1Click:Connect(function()
+    autoOn = not autoOn
+    b1.Text = autoOn and "AUTO: ON" or "AUTO: OFF"
+end)
+
+b2.MouseButton1Click:Connect(function()
+    manualOn = not manualOn
+    if manualOn then mapWideOn = false end
+    b2.Text = manualOn and "MANUAL TP: ON" or "MANUAL TP: OFF"
+    b3.Text = "MAP-WIDE TP: OFF"
+end)
+
+b3.MouseButton1Click:Connect(function()
+    mapWideOn = not mapWideOn
+    if mapWideOn then manualOn = false end
+    mapIndex = 1
+    b3.Text = mapWideOn and "MAP-WIDE TP: ON" or "MAP-WIDE TP: OFF"
+    b2.Text = "MANUAL TP: OFF"
+end)
+
+b4.MouseButton1Click:Connect(function()
+    antiOn = not antiOn
+    b4.Text = antiOn and "ANTI BACKSTAB: ON" or "ANTI BACKSTAB: OFF"
+end)
+
+b5.MouseButton1Click:Connect(function()
+    allowLowHP = not allowLowHP
+    b5.Text = allowLowHP and "LOW HP: ALLOWED" or "LOW HP: BLOCKED"
+end)
