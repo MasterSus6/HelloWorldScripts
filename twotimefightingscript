@@ -15,6 +15,10 @@ getgenv().BackstabGUI_LOADED = true
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+local playerContainer = nil
 
 --// ================= PLAYER =================
 local LP = Players.LocalPlayer
@@ -38,7 +42,7 @@ local BEHIND_DIST = 2.8
 local MIN_HP = 15
 local ANTI_RANGE = 13
 
-local autoOn, manualOn, mapWideOn, antiOn, allowLowHP, mapWideBusy, mapWideBusy = false,false,false,false,false,false,false
+local autoOn, manualOn, mapWideOn, antiOn, allowLowHP = false,false,false,false,false
 local mapIndex = 1
 
 --// ================= ARGS =================
@@ -71,15 +75,57 @@ local function validTarget(h)
     end
 end
 
+local function updatePlayerContainer()
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    local playersFolder = Workspace:FindFirstChild("Players")
+    if not playersFolder then return end
+
+    if char:IsDescendantOf(playersFolder:FindFirstChild("Spectating")) then
+        playerContainer = playersFolder.Spectating
+
+    elseif char:IsDescendantOf(playersFolder:FindFirstChild("InGame")) then
+        playerContainer = playersFolder.InGame
+    end
+end
+
+local function hookCharacter(char)
+    updatePlayerContainer()
+
+    char.AncestryChanged:Connect(function()
+        task.wait()
+        updatePlayerContainer()
+    end)
+end
+
+if LocalPlayer.Character then
+    hookCharacter(LocalPlayer.Character)
+end
+
+LocalPlayer.CharacterAdded:Connect(hookCharacter)
+
 local function getTargets()
     local t = {}
-    for _, o in ipairs(Spectating:GetChildren()) do
-        local model = o:IsA("Model") and o or o.Value
-        local h = hrp(model)
-        if h and h.Parent ~= Char and validTarget(h) then
-            table.insert(t, h)
+    if not CurrentContainer then return t end
+
+    for _, o in ipairs(CurrentContainer:GetChildren()) do
+        local model
+
+        if o:IsA("Model") then
+            model = o
+        elseif o:IsA("ObjectValue") and o.Value and o.Value:IsA("Model") then
+            model = o.Value
+        end
+
+        if model and model ~= Char then
+            local h = hrp(model)
+            if h and validTarget(h) then
+                table.insert(t, h)
+            end
         end
     end
+
     return t
 end
 
@@ -105,12 +151,13 @@ local function closestTarget(range)
     if not self then return end
 
     local best, dist
-    for _, t in ipairs(getTargets_NoHP()) do
+    for _, t in ipairs(getTargets()) do
         local d = (self.Position - t.Position).Magnitude
         if d <= range and (not dist or d < dist) then
             best, dist = t, d
         end
     end
+
     return best
 end
 
@@ -148,51 +195,20 @@ end)
 
 --// ================= MAP WIDE =================
 getgenv().MapWideConn = RunService.Heartbeat:Connect(function()
-    if not mapWideOn then
-        lastCooldownEmpty = false
-        return
-    end
-
-    local cooldownEmpty = cooldownReady()
-
-    -- só dispara quando o cooldown ACABA (edge detect)
-    if not cooldownEmpty or lastCooldownEmpty or mapWideBusy then
-        lastCooldownEmpty = cooldownEmpty
-        return
-    end
-
-    lastCooldownEmpty = true
-    mapWideBusy = true
+    if not mapWideOn or not cooldownReady() then return end
 
     local list = getTargets()
-    if #list == 0 then
-        mapWideBusy = false
-        return
-    end
+    if #list == 0 then return end
 
-    if mapIndex > #list then
-        mapIndex = 1
-    end
-
+    if mapIndex > #list then mapIndex = 1 end
     local target = list[mapIndex]
     mapIndex += 1
 
     local self = hrp(Char)
-    if not self or not target.Parent then
-        mapWideBusy = false
-        return
-    end
+    if not self then return end
 
-    -- ativa habilidade UMA VEZ
     Remote:FireServer(unpack(daggerArgs))
-
-    -- TP contínuo durante windup
     tpBehind(self, target, WINDUP + MAP_EXTRA_HOLD)
-
-    -- espera o cooldown realmente começar
-    task.delay(0.1, function()
-        mapWideBusy = false
-    end)
 end)
 
 --// ================= ANTI BACKSTAB =================
