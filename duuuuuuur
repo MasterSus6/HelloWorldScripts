@@ -1,0 +1,89 @@
+-- LocalScript
+
+if getgenv().AutoFarm then return end
+getgenv().AutoFarm = true
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local targetPart = game:GetService("Workspace")
+    :WaitForChild("Obbies")
+    :WaitForChild("AwardParts")
+    :WaitForChild("Hardest")
+
+getgenv().Interval = getgenv().Interval or 0.1
+local INTERVAL = getgenv().Interval
+local AUTO_FARM = false
+
+-- ===== GUI =====
+local gui = Instance.new("ScreenGui")
+gui.Name = "AutoFarmTPGUI"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 180, 0, 80)
+frame.Position = UDim2.new(0, 20, 0.5, -40)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+local button = Instance.new("TextButton", frame)
+button.Size = UDim2.new(1, -20, 1, -20)
+button.Position = UDim2.new(0, 10, 0, 10)
+button.Text = "AUTOFARM: OFF"
+button.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+button.TextColor3 = Color3.new(1,1,1)
+button.Font = Enum.Font.GothamBold
+button.TextSize = 14
+button.BorderSizePixel = 0
+
+Instance.new("UICorner", button).CornerRadius = UDim.new(0, 10)
+
+-- ===== FUNCTIONS =====
+local function getHRP()
+    local char = player.Character
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart")
+end
+
+local function smartTeleport()
+    local hrp = getHRP()
+    if not hrp then return end
+
+    
+    local cf = targetPart.CFrame
+
+    
+    hrp.CFrame = cf * CFrame.new(0, 0, -(targetPart.Size.Z / 2 + 3))
+    task.wait(0.08)
+
+    
+    hrp.CFrame = cf + Vector3.new(0, 2, 0)
+end
+
+-- ===== LOOP =====
+task.spawn(function()
+    while true do
+        if AUTO_FARM then
+            smartTeleport()
+        end
+        task.wait(INTERVAL)
+    end
+end)
+
+-- ===== BUTTON =====
+button.MouseButton1Click:Connect(function()
+    AUTO_FARM = not AUTO_FARM
+
+    if AUTO_FARM then
+        button.Text = "AUTOFARM: ON"
+        button.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
+    else
+        button.Text = "AUTOFARM: OFF"
+        button.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+    end
+end)
