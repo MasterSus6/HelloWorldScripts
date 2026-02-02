@@ -1,0 +1,338 @@
+--==================================================
+-- SERVICES
+--==================================================
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local PathfindingService = game:GetService("PathfindingService")
+
+--==================================================
+-- FARM PART
+--==================================================
+local farmPart = workspace.Obbies.AwardParts.Hardest
+
+--==================================================
+-- R6 EAT ORDER (REAL)
+--==================================================
+local R6_EAT_ORDER = {
+    "Right Arm",
+    "Left Arm",
+    "Right Leg",
+    "Left Leg",
+    "Head",
+    "Torso",
+}
+
+local function getHRP()
+    local char = player.Character or player.CharacterAdded:Wait()
+    return char:WaitForChild("HumanoidRootPart", 3)
+end
+
+local function countRemainingLimbs(char)
+    local count = 0
+    for _,name in ipairs(R6_EAT_ORDER) do
+        if char:FindFirstChild(name) then
+            count += 1
+        end
+    end
+    return count
+end
+
+--==================================================
+-- ROLE DETECTION
+--==================================================
+local currentRole = "Unknown"
+
+local function updateRole()
+    if player.Team then
+        currentRole = player.Team.Name
+    else
+        currentRole = "Dead"
+    end
+end
+
+updateRole()
+player:GetPropertyChangedSignal("Team"):Connect(updateRole)
+
+local function getBestSurvivor()
+    local hrp = getHRP()
+    if not hrp then return end
+
+    local bestPlayer
+    local bestScore = math.huge
+
+    for _,plr in ipairs(Players:GetPlayers()) do
+        if plr ~= player
+        and plr.Team
+        and plr.Team.Name == "Alive"
+        and plr.Character
+        and plr.Character:FindFirstChild("HumanoidRootPart")
+        and plr.Character:FindFirstChild("Humanoid")
+        and plr.Character.Humanoid.Health > 0 then
+
+            local dist = (plr.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+            local limbs = countRemainingLimbs(plr.Character)
+
+            -- peso: distância é mais importante, limbs desempata
+            local score = dist + (limbs * 6)
+
+            if score < bestScore then
+                bestScore = score
+                bestPlayer = plr
+            end
+        end
+    end
+
+    return bestPlayer
+end
+
+local function flatPosition(pos)
+    return Vector3.new(pos.X, hrp.Position.Y, pos.Z)
+end
+
+local function pathfindToCharacter(char)
+    local hrp = getHRP()
+    local humanoid = player.Character and player.Character:FindFirstChild("Humanoid")
+    local targetHRP = char and char:FindFirstChild("HumanoidRootPart")
+
+    if not hrp or not humanoid or not targetHRP then return end
+    hrp.Anchored = false
+
+    local lastRecalc = 0
+
+    while G.Enabled
+    and char.Parent
+    and targetHRP.Parent
+    and (targetHRP.Position - hrp.Position).Magnitude > 4 do
+
+        -- limita recalculo
+        if os.clock() - lastRecalc < (G.PathRecalcTime or 0.6) then
+            task.wait(0.05)
+            continue
+        end
+        lastRecalc = os.clock()
+
+        local path = PathfindingService:CreatePath({
+            AgentRadius = 2,
+            AgentHeight = 5,
+            AgentCanJump = true,
+            AgentJumpHeight = 9,
+            AgentMaxSlope = 45,
+        })
+
+        path:ComputeAsync(hrp.Position, flatPosition(targetHRP.Position))
+
+        if path.Status ~= Enum.PathStatus.Success then
+            -- fallback
+            hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, -3)
+            task.wait(0.15)
+            continue
+        end
+
+        for _, waypoint in ipairs(path:GetWaypoints()) do
+            humanoid:MoveTo(waypoint.Position)
+
+            if waypoint.Action == Enum.PathWaypointAction.Jump then
+                humanoid.Jump = true
+            end
+
+            local reached = humanoid.MoveToFinished:Wait(0.4)
+
+            -- travou → força pulo
+            if not reached then
+                humanoid.Jump = true
+            end
+
+            -- se já tá perto, sai
+            if (targetHRP.Position - hrp.Position).Magnitude <= 4 then
+                return
+            end
+        end
+
+        task.wait(0.05)
+    end
+end
+
+
+
+--==================================================
+-- TELEPORT COM TOQUE GARANTIDO
+--==================================================
+local function teleportWithTouch()
+    local hrp = getHRP()
+    if not hrp then return end
+
+    local cf = farmPart.CFrame
+
+    hrp.CFrame = cf * CFrame.new(0, 0, -(farmPart.Size.Z / 2 + 3))
+    task.wait(G.TeleportTouchDelay or 0.08)
+
+    hrp.CFrame = cf + Vector3.new(0, 2, 0)
+end
+
+local function teleportNearCharacter(char, distance)
+    local hrp = getHRP()
+    local targetHRP = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp or not targetHRP then return end
+
+    distance = distance or 4 -- perto o suficiente pra atacar
+    hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, -distance)
+end
+
+--==================================================
+-- EAT EVENT (SÓ EXISTE SE FOR DURR)
+--==================================================
+local function getEatEvent()
+    local root = workspace:FindFirstChild("MultiplesALTS_5")
+    if not root then return end
+
+    local eat = root:FindFirstChild("Eat")
+    if not eat then return end
+
+    return eat:FindFirstChild("EatEvent")
+end
+
+--==================================================
+-- PRÓXIMA PARTE VÁLIDA R6
+--==================================================
+local function getNextEatPart(char)
+    for _,name in ipairs(R6_EAT_ORDER) do
+        local part = char:FindFirstChild(name)
+        if part and part:IsA("BasePart") then
+            return part
+        end
+    end
+    return nil
+end
+
+local function durrHuntAndEat()
+    local EatEvent = getEatEvent()
+    if not EatEvent then return end
+
+    local target = getBestSurvivor()
+    if not target or not target.Character then return end
+
+    -- mover até o alvo
+    if G.UsePathfinding then
+        local ok = pathfindToCharacter(target.Character)
+        if not ok then
+            teleportNearCharacter(target.Character, 4)
+        end
+    else
+        teleportNearCharacter(target.Character, 4)
+    end
+
+    task.wait(0.25)
+
+    -- comer
+    local part = getNextEatPart(target.Character)
+    if part then
+        EatEvent:FireServer(part)
+    end
+end
+
+
+--==================================================
+-- AUTO EAT (DURR)
+--==================================================
+local function eatAllPlayers()
+    local EatEvent = getEatEvent()
+    if not EatEvent then return end
+
+    for _,plr in ipairs(Players:GetPlayers()) do
+        if plr ~= player and plr.Character and plr.Team and plr.Team.Name ~= "Dead" then
+            local part = getNextEatPart(plr.Character)
+            if part then
+                EatEvent:FireServer(part)
+                task.wait(0.06)
+            end
+        end
+    end
+end
+
+--==================================================
+-- MAIN LOOP
+--==================================================
+task.spawn(function()
+    while true do
+        if G.Enabled then
+            if currentRole == "Durr" and G.AutoEat then
+                durrHuntAndEat()
+            elseif (currentRole == "Alive" or currentRole == "Dead")
+            and G.AutoTeleport then
+                teleportWithTouch()
+            end
+        end
+
+        task.wait(G.Interval)
+    end
+end)
+
+--==================================================
+-- GUI MODERNA + DRAG
+--==================================================
+local gui = Instance.new("ScreenGui")
+gui.Name = "AutoFarmModernGUI"
+gui.ResetOnSpawn = false
+gui.Parent = player.PlayerGui
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.fromOffset(260, 160)
+frame.Position = UDim2.fromScale(0.05, 0.4)
+frame.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+frame.BorderSizePixel = 0
+frame.Active = true
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 14)
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, -20, 0, 35)
+title.Position = UDim2.fromOffset(10, 8)
+title.BackgroundTransparency = 1
+title.Text = "AutoFarm Controller"
+title.TextColor3 = Color3.fromRGB(255,255,255)
+title.TextSize = 18
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+local status = Instance.new("TextLabel", frame)
+status.Size = UDim2.new(1, -20, 0, 22)
+status.Position = UDim2.fromOffset(10, 45)
+status.BackgroundTransparency = 1
+status.TextColor3 = Color3.fromRGB(180,180,180)
+status.TextSize = 14
+status.Font = Enum.Font.Gotham
+status.TextXAlignment = Enum.TextXAlignment.Left
+
+local toggle = Instance.new("TextButton", frame)
+toggle.Size = UDim2.fromOffset(220, 42)
+toggle.Position = UDim2.fromOffset(20, 80)
+toggle.TextSize = 16
+toggle.Font = Enum.Font.GothamBold
+toggle.TextColor3 = Color3.new(1,1,1)
+toggle.BorderSizePixel = 0
+
+local drag = Instance.new("UIDragDetector")
+drag.Parent = frame
+
+Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 12)
+
+local function updateButton()
+    toggle.Text = G.Enabled and "AUTOFARM: ON" or "AUTOFARM: OFF"
+    toggle.BackgroundColor3 = G.Enabled and Color3.fromRGB(0,170,90) or Color3.fromRGB(120,40,40)
+end
+
+toggle.MouseButton1Click:Connect(function()
+    G.Enabled = not G.Enabled
+    updateButton()
+end)
+
+-- STATUS UPDATE
+task.spawn(function()
+    while true do
+        status.Text = "Role: "..currentRole
+        task.wait(0.3)
+    end
+end)
+
+updateButton()
