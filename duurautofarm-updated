@@ -1,4 +1,9 @@
 local G = getgenv()
+if type(G) ~= "table" then
+    error("getgenv() is not available")
+end
+
+G.Enabled = G.Enabled or false
 
 --==================================================
 -- SERVICES
