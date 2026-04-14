@@ -16,14 +16,36 @@ function Utils.IsValid(obj)
     return obj and obj.Parent ~= nil
 end
 
+function Utils.GetPosition(obj)
+    if not obj then return nil end
+
+    if obj:IsA("BasePart") then
+        return obj.Position
+    end
+
+    if obj:IsA("Model") then
+        if obj.PrimaryPart then
+            return obj.PrimaryPart.Position
+        end
+
+        -- fallback: tenta pegar qualquer part
+        local part = obj:FindFirstChildWhichIsA("BasePart")
+        if part then
+            return part.Position
+        end
+    end
+
+    return nil
+end
+
 function Utils.GetDistance(a, b)
-    if not (Utils.IsValid(a) and Utils.IsValid(b)) then return math.huge end
-    
-    local posA = a.Position or a.PrimaryPart and a.PrimaryPart.Position
-    local posB = b.Position or b.PrimaryPart and b.PrimaryPart.Position
-    
-    if not posA or not posB then return math.huge end
-    
+    local posA = Utils.GetPosition(a)
+    local posB = Utils.GetPosition(b)
+
+    if not posA or not posB then
+        return math.huge
+    end
+
     return (posA - posB).Magnitude
 end
 
@@ -260,13 +282,17 @@ end
 HW.Time = {}
 
 local startTime = tick()
-local floorStart = 0
+local floorStart = tick()
 
--- detectar início do floor
 task.spawn(function()
     local info = Utils.GetInfo()
     if not info then return end
-    
+
+    -- se já estiver ativo
+    if info.FloorActive.Value then
+        floorStart = tick()
+    end
+
     info.FloorActive:GetPropertyChangedSignal("Value"):Connect(function()
         if info.FloorActive.Value then
             floorStart = tick()
