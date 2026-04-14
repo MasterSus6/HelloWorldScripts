@@ -84,6 +84,16 @@ function HW.Game.GetFloor()
     return info and info.Floor.Value or 0
 end
 
+function HW.Game.IsBlackout()
+    local info = workspace:FindFirstChild("Info")
+    return info and info.BlackOut.Value or false
+end
+
+function HW.Game.IsPanic()
+    local info = workspace:FindFirstChild("Info")
+    return info and info.HurryUp.Value or false
+end
+
 function HW.Game.GetGameState()
     local info = Utils.GetInfo()
     if not info then return "Unknown" end
@@ -169,6 +179,24 @@ function HW.Machines.GetNearest()
     return closest
 end
 
+function HW.Machines.IsCompleted(machine)
+    local stats = machine:FindFirstChild("Stats")
+    return stats and stats.Completed.Value or false
+end
+
+function HW.Machines.GetProgress(machine)
+    local stats = machine:FindFirstChild("Stats")
+    
+    if not stats then return 0 end
+    
+    local current = stats.CurrentAmount.Value
+    local required = stats.RequiredAmount.Value
+    
+    if required == 0 then return 0 end
+    
+    return current / required
+end
+
 --// ========================
 --// PLAYERS
 --// ========================
@@ -215,6 +243,35 @@ function HW.Players.GetAlive()
     end
     
     return t
+end
+
+function HW.Players.GetStamina(player)
+    local folder = workspace.InGamePlayers:FindFirstChild(player.Name)
+    return folder and folder.Stats.CurrentStamina.Value or 0
+end
+
+function HW.Players.GetMaxStamina(player)
+    local folder = workspace.InGamePlayers:FindFirstChild(player.Name)
+    return folder and folder.Stats.Stamina.Value or 0
+end
+
+function HW.Players.GetInventory(player)
+    local folder = workspace.InGamePlayers:FindFirstChild(player.Name)
+    if not folder then return {} end
+    
+    local inv = folder:FindFirstChild("Inventory")
+    if not inv then return {} end
+    
+    return {
+        inv.Slot1.Value,
+        inv.Slot2.Value,
+        inv.Slot3.Value
+    }
+end
+
+function HW.Players.IsDecoding(player)
+    local folder = workspace.InGamePlayers:FindFirstChild(player.Name)
+    return folder and folder.Decoding.Value ~= nil
 end
 
 --// ========================
@@ -273,6 +330,11 @@ end
 function HW.Map.GetElevator()
     local elev = workspace:FindFirstChild("Elevators")
     return elev and elev:FindFirstChild("Elevator")
+end
+
+function HW.Map.GetItems()
+    local map = HW.Game.GetMap()
+    return map and map:FindFirstChild("Items"):GetChildren() or {}
 end
 
 --// ========================
