@@ -1,0 +1,326 @@
+-- HW Library (Core), omg chat gpt I swear if you don't make this script work i'm going to FUN kill you
+
+local HW = {}
+
+--// Services
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+--// Cache
+local Cache = {}
+
+--// Utils
+local Utils = {}
+
+function Utils.IsValid(obj)
+    return obj and obj.Parent ~= nil
+end
+
+function Utils.GetDistance(a, b)
+    if not (Utils.IsValid(a) and Utils.IsValid(b)) then return math.huge end
+    
+    local posA = a.Position or a.PrimaryPart and a.PrimaryPart.Position
+    local posB = b.Position or b.PrimaryPart and b.PrimaryPart.Position
+    
+    if not posA or not posB then return math.huge end
+    
+    return (posA - posB).Magnitude
+end
+
+function Utils.GetMap()
+    local room = workspace:FindFirstChild("CurrentRoom")
+    if not room then return nil end
+    
+    return room:GetChildren()[1]
+end
+
+function Utils.GetInfo()
+    return workspace:FindFirstChild("Info")
+end
+
+function Utils.GetInGamePlayers()
+    return workspace:FindFirstChild("InGamePlayers")
+end
+
+--// ========================
+--// GAME
+--// ========================
+
+HW.Game = {}
+
+function HW.Game.IsGame()
+    local info = Utils.GetInfo()
+    return info and info.GameStarted.Value or false
+end
+
+function HW.Game.IsLobby()
+    return not HW.Game.IsGame()
+end
+
+function HW.Game.GetFloor()
+    local info = Utils.GetInfo()
+    return info and info.Floor.Value or 0
+end
+
+function HW.Game.GetGameState()
+    local info = Utils.GetInfo()
+    if not info then return "Unknown" end
+
+    if info.Voting.Value then
+        return "Voting"
+    elseif info.FloorActive.Value then
+        return "ActiveFloor"
+    else
+        return "Intermission"
+    end
+end
+
+function HW.Game.GetMap()
+    return Utils.GetMap()
+end
+
+function HW.Game.GetMapName()
+    local map = Utils.GetMap()
+    return map and map.Name or "Unknown"
+end
+
+--// ========================
+--// MACHINES
+--// ========================
+
+HW.Machines = {}
+
+function HW.Machines.GetCompleted()
+    local info = Utils.GetInfo()
+    return info and info.GeneratorsCompleted.Value or 0
+end
+
+function HW.Machines.GetTotal()
+    local info = Utils.GetInfo()
+    return info and info.RequiredGenerators.Value or 0
+end
+
+function HW.Machines.GetRemaining()
+    return HW.Machines.GetTotal() - HW.Machines.GetCompleted()
+end
+
+function HW.Machines.IsLast()
+    return HW.Machines.GetRemaining() == 1
+end
+
+function HW.Machines.GetProgressDecimal()
+    local total = HW.Machines.GetTotal()
+    if total == 0 then return 0 end
+    
+    return HW.Machines.GetCompleted() / total
+end
+
+function HW.Machines.GetProgressPercent()
+    return HW.Machines.GetProgressDecimal() * 100
+end
+
+function HW.Machines.GetAll()
+    local map = Utils.GetMap()
+    if not map then return {} end
+    
+    local gens = map:FindFirstChild("Generators")
+    return gens and gens:GetChildren() or {}
+end
+
+function HW.Machines.GetNearest()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    
+    local closest, dist = nil, math.huge
+    
+    for _, gen in pairs(HW.Machines.GetAll()) do
+        local d = Utils.GetDistance(root, gen)
+        if d < dist then
+            closest = gen
+            dist = d
+        end
+    end
+    
+    return closest
+end
+
+--// ========================
+--// PLAYERS
+--// ========================
+
+HW.Players = {}
+
+function HW.Players.GetAll()
+    return Players:GetPlayers()
+end
+
+function HW.Players.GetCharacter(player)
+    return player.Character
+end
+
+function HW.Players.GetLocal()
+    return LocalPlayer
+end
+
+function HW.Players.GetLocalCharacter()
+    return LocalPlayer.Character
+end
+
+function HW.Players.GetStats(player)
+    local folder = Utils.GetInGamePlayers()
+    return folder and folder:FindFirstChild(player.Name) and folder[player.Name]:FindFirstChild("Stats")
+end
+
+function HW.Players.GetHealth(player)
+    local stats = HW.Players.GetStats(player)
+    return stats and stats.Health.Value or 0
+end
+
+function HW.Players.IsAlive(player)
+    return HW.Players.GetHealth(player) > 0
+end
+
+function HW.Players.GetAlive()
+    local t = {}
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if HW.Players.IsAlive(plr) then
+            table.insert(t, plr)
+        end
+    end
+    
+    return t
+end
+
+--// ========================
+--// TWISTEDS
+--// ========================
+
+HW.Twisteds = {}
+
+function HW.Twisteds.GetAll()
+    local map = Utils.GetMap()
+    if not map then return {} end
+    
+    local monsters = map:FindFirstChild("Monsters")
+    return monsters and monsters:GetChildren() or {}
+end
+
+function HW.Twisteds.GetNearest()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    
+    local closest, dist = nil, math.huge
+    
+    for _, t in pairs(HW.Twisteds.GetAll()) do
+        local d = Utils.GetDistance(root, t)
+        if d < dist then
+            closest = t
+            dist = d
+        end
+    end
+    
+    return closest
+end
+
+function HW.Twisteds.GetNearestDistance()
+    local nearest = HW.Twisteds.GetNearest()
+    local char = LocalPlayer.Character
+    if not (nearest and char) then return math.huge end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    return Utils.GetDistance(root, nearest)
+end
+
+--// ========================
+--// MAP
+--// ========================
+
+HW.Map = {}
+
+function HW.Map.GetGenerators()
+    return HW.Machines.GetAll()
+end
+
+function HW.Map.GetElevator()
+    local elev = workspace:FindFirstChild("Elevators")
+    return elev and elev:FindFirstChild("Elevator")
+end
+
+--// ========================
+--// TIME
+--// ========================
+
+HW.Time = {}
+
+local startTime = tick()
+local floorStart = 0
+
+-- detectar início do floor
+task.spawn(function()
+    local info = Utils.GetInfo()
+    if not info then return end
+    
+    info.FloorActive:GetPropertyChangedSignal("Value"):Connect(function()
+        if info.FloorActive.Value then
+            floorStart = tick()
+        end
+    end)
+end)
+
+function HW.Time.GetElapsed()
+    return tick() - startTime
+end
+
+function HW.Time.GetFloorTime()
+    return tick() - floorStart
+end
+
+--// ========================
+--// EVENTS (BÁSICO)
+--// ========================
+
+HW.Events = {}
+
+function HW.Events.OnGameStarted(callback)
+    local info = Utils.GetInfo()
+    if not info then return end
+    
+    info.GameStarted:GetPropertyChangedSignal("Value"):Connect(function()
+        if info.GameStarted.Value then
+            callback()
+        end
+    end)
+end
+
+function HW.Events.OnMachineCompleted(callback)
+    local info = Utils.GetInfo()
+    if not info then return end
+    
+    info.GeneratorsCompleted:GetPropertyChangedSignal("Value"):Connect(function()
+        callback(info.GeneratorsCompleted.Value)
+    end)
+end
+
+function HW.Events.OnPanic(callback)
+    local info = Utils.GetInfo()
+    if not info then return end
+    
+    info.HurryUp:GetPropertyChangedSignal("Value"):Connect(function()
+        if info.HurryUp.Value then
+            callback()
+        end
+    end)
+end
+
+--// ========================
+--// RETURN
+--// ========================
+
+return HW
