@@ -1,6 +1,16 @@
 -- HW Library (Core), omg chat gpt I swear if you don't make this script work i'm going to FUN kill you
 
+if not game:IsLoaded() then game.Loaded:Wait() end
+
 local HW = {}
+
+HW.Game = {}
+HW.Machines = {}
+HW.Players = {}
+HW.Twisteds = {}
+HW.Map = {}
+HW.Time = {}
+HW.Events = {}
 
 --// Services
 local Players = game:GetService("Players")
@@ -11,6 +21,14 @@ local Cache = {}
 
 --// Utils
 local Utils = {}
+
+--// Constants
+local info = workspace.Info
+local ingameplayers = workspace.InGamePlayers
+local elev = workspace.Elevators.Elevator
+
+--// Variables
+local connections = {}
 
 function Utils.IsValid(obj)
     return obj and obj.Parent ~= nil
@@ -26,6 +44,11 @@ function Utils.GetPosition(obj)
     if obj:IsA("Model") then
         if obj.PrimaryPart then
             return obj.PrimaryPart.Position
+        end
+
+        local pivot = obj:GetPivot()
+        if pivot then
+            return pivot.Position
         end
 
         -- fallback: tenta pegar qualquer part
@@ -50,29 +73,23 @@ function Utils.GetDistance(a, b)
 end
 
 function Utils.GetMap()
-    local room = workspace:FindFirstChild("CurrentRoom")
-    if not room then return nil end
-    
-    return room:GetChildren()[1]
+    return workspace.CurrentRoom:FindFirstChildOfClass("Model")
 end
 
 function Utils.GetInfo()
-    return workspace:FindFirstChild("Info")
+    return info
 end
 
 function Utils.GetInGamePlayers()
-    return workspace:FindFirstChild("InGamePlayers")
+    return ingameplayers
 end
 
 --// ========================
 --// GAME
 --// ========================
 
-HW.Game = {}
-
 function HW.Game.IsGame()
-    local info = Utils.GetInfo()
-    return info and info.GameStarted.Value or false
+    return info.GameStarted.Value or false
 end
 
 function HW.Game.IsLobby()
@@ -80,24 +97,22 @@ function HW.Game.IsLobby()
 end
 
 function HW.Game.GetFloor()
-    local info = Utils.GetInfo()
-    return info and info.Floor.Value or 0
+    return info.Floor.Value or 0
 end
 
 function HW.Game.IsBlackout()
-    local info = workspace:FindFirstChild("Info")
-    return info and info.BlackOut.Value or false
+    return info.BlackOut.Value or false
 end
 
 function HW.Game.IsPanic()
-    local info = workspace:FindFirstChild("Info")
-    return info and info.HurryUp.Value or false
+    return info.Panic.Value or false
+end
+
+function HW.Game.IsHurryUp()
+    return info.HurryUp.Value or false
 end
 
 function HW.Game.GetGameState()
-    local info = Utils.GetInfo()
-    if not info then return "Unknown" end
-
     if info.Voting.Value then
         return "Voting"
     elseif info.FloorActive.Value then
@@ -120,16 +135,12 @@ end
 --// MACHINES
 --// ========================
 
-HW.Machines = {}
-
 function HW.Machines.GetCompleted()
-    local info = Utils.GetInfo()
-    return info and info.GeneratorsCompleted.Value or 0
+    return info.GeneratorsCompleted.Value or 0
 end
 
 function HW.Machines.GetTotal()
-    local info = Utils.GetInfo()
-    return info and info.RequiredGenerators.Value or 0
+    return info.RequiredGenerators.Value or 0
 end
 
 function HW.Machines.GetRemaining()
@@ -201,8 +212,6 @@ end
 --// PLAYERS
 --// ========================
 
-HW.Players = {}
-
 function HW.Players.GetAll()
     return Players:GetPlayers()
 end
@@ -220,8 +229,7 @@ function HW.Players.GetLocalCharacter()
 end
 
 function HW.Players.GetStats(player)
-    local folder = Utils.GetInGamePlayers()
-    return folder and folder:FindFirstChild(player.Name) and folder[player.Name]:FindFirstChild("Stats")
+    return ingameplayers:FindFirstChild(player.Name) and ingameplayers[player.Name]:FindFirstChild("Stats")
 end
 
 function HW.Players.GetHealth(player)
@@ -246,17 +254,17 @@ function HW.Players.GetAlive()
 end
 
 function HW.Players.GetStamina(player)
-    local folder = workspace.InGamePlayers:FindFirstChild(player.Name)
+    local folder = ingameplayers:FindFirstChild(player.Name)
     return folder and folder.Stats.CurrentStamina.Value or 0
 end
 
 function HW.Players.GetMaxStamina(player)
-    local folder = workspace.InGamePlayers:FindFirstChild(player.Name)
+    local folder = ingameplayers:FindFirstChild(player.Name)
     return folder and folder.Stats.Stamina.Value or 0
 end
 
 function HW.Players.GetInventory(player)
-    local folder = workspace.InGamePlayers:FindFirstChild(player.Name)
+    local folder = ingameplayers:FindFirstChild(player.Name)
     if not folder then return {} end
     
     local inv = folder:FindFirstChild("Inventory")
@@ -270,15 +278,13 @@ function HW.Players.GetInventory(player)
 end
 
 function HW.Players.IsDecoding(player)
-    local folder = workspace.InGamePlayers:FindFirstChild(player.Name)
+    local folder = ingameplayers:FindFirstChild(player.Name)
     return folder and folder.Decoding.Value ~= nil
 end
 
 --// ========================
 --// TWISTEDS
 --// ========================
-
-HW.Twisteds = {}
 
 function HW.Twisteds.GetAll()
     local map = Utils.GetMap()
@@ -321,15 +327,12 @@ end
 --// MAP
 --// ========================
 
-HW.Map = {}
-
 function HW.Map.GetGenerators()
     return HW.Machines.GetAll()
 end
 
 function HW.Map.GetElevator()
-    local elev = workspace:FindFirstChild("Elevators")
-    return elev and elev:FindFirstChild("Elevator")
+    return elev
 end
 
 function HW.Map.GetItems()
@@ -341,20 +344,13 @@ end
 --// TIME
 --// ========================
 
-HW.Time = {}
-
 local startTime = tick()
 local floorStart = tick()
 
 task.spawn(function()
-    local info = Utils.GetInfo()
-    if not info then return end
-
-    -- se já estiver ativo
     if info.FloorActive.Value then
         floorStart = tick()
     end
-
     info.FloorActive:GetPropertyChangedSignal("Value"):Connect(function()
         if info.FloorActive.Value then
             floorStart = tick()
@@ -374,37 +370,56 @@ end
 --// EVENTS (BÁSICO)
 --// ========================
 
-HW.Events = {}
-
 function HW.Events.OnGameStarted(callback)
-    local info = Utils.GetInfo()
-    if not info then return end
-    
-    info.GameStarted:GetPropertyChangedSignal("Value"):Connect(function()
+    local conn = info.GameStarted:GetPropertyChangedSignal("Value"):Connect(function()
         if info.GameStarted.Value then
             callback()
         end
     end)
+    connections[conn] = true
+    return conn
 end
 
 function HW.Events.OnMachineCompleted(callback)
-    local info = Utils.GetInfo()
-    if not info then return end
-    
-    info.GeneratorsCompleted:GetPropertyChangedSignal("Value"):Connect(function()
+    local conn = info.GeneratorsCompleted:GetPropertyChangedSignal("Value"):Connect(function()
         callback(info.GeneratorsCompleted.Value)
     end)
+    connections[conn] = true
+    return conn
 end
 
 function HW.Events.OnPanic(callback)
-    local info = Utils.GetInfo()
-    if not info then return end
-    
-    info.HurryUp:GetPropertyChangedSignal("Value"):Connect(function()
+    local conn = info.Panic:GetPropertyChangedSignal("Value"):Connect(function()
+        if info.Panic.Value then
+            callback()
+        end
+    end)
+    connections[conn] = true
+    return conn
+end
+
+function HW.Events.OnHurryUp(callback)
+    local conn = info.HurryUp:GetPropertyChangedSignal("Value"):Connect(function()
         if info.HurryUp.Value then
             callback()
         end
     end)
+    connections[conn] = true
+    return conn
+end
+
+function HW.Events.Disconnect(connection)
+    if connection then
+        connection:Disconnect()
+        connections[connection] = nil
+    end
+end
+
+function HW.Events.DisconnectAll()
+    for _, conn in ipairs(connections) do
+        conn:Disconnect()
+    end
+    connections = {}
 end
 
 --// ========================
