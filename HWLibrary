@@ -1,4 +1,4 @@
--- HW Library (Core), omg chat gpt I swear if you don't make this script work i'm going to FUN kill you
+-- pee poo poo ha ha base script, credits to olivia for some tweaks and improvements to the code
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
@@ -23,6 +23,7 @@ local Cache = {}
 local Utils = {}
 
 --// Constants
+-- it assumes that these objects ALWAYS exists, not sure if it works when executing on the lobby, I only tested it in-game;_;
 local info = workspace.Info
 local ingameplayers = workspace.InGamePlayers
 local elev = workspace.Elevators.Elevator
@@ -260,7 +261,7 @@ end
 
 function HW.Players.GetMaxStamina(player)
     local folder = ingameplayers:FindFirstChild(player.Name)
-    return folder and folder.Stats.Stamina.Value or 0
+    return folder and folder.Stats.Stamina.Value or 100
 end
 
 function HW.Players.GetInventory(player)
@@ -367,7 +368,7 @@ function HW.Time.GetFloorTime()
 end
 
 --// ========================
---// EVENTS (BÁSICO)
+--// EVENTS (pretty much in wip)
 --// ========================
 
 function HW.Events.OnGameStarted(callback)
@@ -388,11 +389,10 @@ function HW.Events.OnMachineCompleted(callback)
     return conn
 end
 
+-- idk if those two works, sigh...........
 function HW.Events.OnPanic(callback)
     local conn = info.Panic:GetPropertyChangedSignal("Value"):Connect(function()
-        if info.Panic.Value then
-            callback()
-        end
+        callback()
     end)
     connections[conn] = true
     return conn
@@ -400,14 +400,13 @@ end
 
 function HW.Events.OnHurryUp(callback)
     local conn = info.HurryUp:GetPropertyChangedSignal("Value"):Connect(function()
-        if info.HurryUp.Value then
-            callback()
-        end
+        callback()
     end)
     connections[conn] = true
     return conn
 end
 
+-- big gpt told me this was wrong, i'm not sure tho
 function HW.Events.Disconnect(connection)
     if connection then
         connection:Disconnect()
@@ -426,4 +425,5 @@ end
 --// RETURN
 --// ========================
 
+-- no, come back
 return HW
