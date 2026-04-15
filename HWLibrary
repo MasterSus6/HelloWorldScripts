@@ -23,7 +23,7 @@ local Cache = {}
 local Utils = {}
 
 --// Constants
--- it assumes that these objects ALWAYS exists, not sure if it works when executing on the lobby, I only tested it in-game;_;
+-- it assumes that these objects ALWAYS exists, just don't execute it on the lobby
 local info = workspace.Info
 local ingameplayers = workspace.InGamePlayers
 local elev = workspace.Elevators.Elevator
@@ -90,7 +90,8 @@ end
 --// ========================
 
 function HW.Game.IsGame()
-    return info.GameStarted.Value or false
+    info = info or workspace:FindFirstChild("Info")
+    return info and info.GameStarted.Value or false
 end
 
 function HW.Game.IsLobby()
@@ -230,7 +231,10 @@ function HW.Players.GetLocalCharacter()
 end
 
 function HW.Players.GetStats(player)
-    return ingameplayers:FindFirstChild(player.Name) and ingameplayers[player.Name]:FindFirstChild("Stats")
+    ingameplayers = ingameplayers or workspace:FindFirstChild("InGamePlayers")
+    
+    local plr = ingameplayers and ingameplayers:FindFirstChild(player.Name)
+    return plr and plr:FindFirstChild("Stats")
 end
 
 function HW.Players.GetHealth(player)
@@ -333,6 +337,8 @@ function HW.Map.GetGenerators()
 end
 
 function HW.Map.GetElevator()
+    local elevators = workspace:FindFirstChild("Elevators")
+    elev = elevators and elevators:FindFirstChild("Elevator")
     return elev
 end
 
