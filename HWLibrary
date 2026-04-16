@@ -25,7 +25,8 @@ local Utils = {}
 --// Constants
 local info = workspace:FindFirstChild("Info")
 local ingameplayers = workspace:FindFirstChild("InGamePlayers")
-local elev = workspace:FindFirstChild("Elevators").Elevator
+local elevators = workspace:FindFirstChild("Elevators")
+local elev = elevators and elevators:FindFirstChild("Elevator")
 
 --// Variables
 local connections = {}
