@@ -355,7 +355,7 @@ local startTime = tick()
 local floorStart = tick()
 
 task.spawn(function()
-    if info.FloorActive.Value then
+    if info:FindFirstChild("FloorActive").Value then
         floorStart = tick()
     end
     info.FloorActive:GetPropertyChangedSignal("Value"):Connect(function()
