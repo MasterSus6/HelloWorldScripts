@@ -23,10 +23,9 @@ local Cache = {}
 local Utils = {}
 
 --// Constants
--- it assumes that these objects ALWAYS exists, just don't execute it on the lobby
-local info = workspace.Info
-local ingameplayers = workspace.InGamePlayers
-local elev = workspace.Elevators.Elevator
+local info = workspace:FindFirstChild("Info")
+local ingameplayers = workspace:FindFirstChild("InGamePlayers")
+local elev = workspace:FindFirstChild("Elevators").Elevator
 
 --// Variables
 local connections = {}
