@@ -1,0 +1,27 @@
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+if not sprint.DefaultConfig then return
+if not sprint.ApplyActorConfig then return
+
+local function apply()
+    local sprintModule = game:GetService("ReplicatedStorage"):WaitForChild("Systems").Character.Game:WaitForChild("Sprinting")
+
+    local ok, sprint = pcall(require, sprintModule)
+    if not ok or not sprint then return end
+
+    local value = getgenv().MaxStaminaValue or 110
+
+    sprint.MaxStamina = value
+    sprint.Stamina = value
+
+    sprint.DefaultConfig.MaxStamina = value
+    sprint:ApplyActorConfig(sprint.DefaultConfig)
+end
+
+apply()
+
+player.CharacterAdded:Connect(function()
+    task.wait(1)
+    apply()
+end)
