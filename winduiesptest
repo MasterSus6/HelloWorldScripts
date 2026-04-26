@@ -1,0 +1,245 @@
+--// CLEANUP
+for _, v in pairs(game:GetDescendants()) do
+    if v:IsA("Highlight") and v.Name == "ESP_HIGHLIGHT" then
+        v:Destroy()
+    end
+end
+
+--// WindUI
+local WindUI = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+))()
+
+local Window = WindUI:CreateWindow({
+    Title = "Advanced ESP",
+    Icon = "eye",
+    Theme = "Dark",
+    Folder = "AdvancedESP"
+})
+
+local Tab = Window:Tab({ Title = "ESP", Icon = "scan" })
+
+--// Services
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+--// State
+local Settings = {
+    Ferals = false,
+    Survivors = false,
+    Objectives = false
+}
+
+local Colors = {
+    Ferals = Color3.fromRGB(255, 80, 80),
+    Survivors = Color3.fromRGB(80, 255, 120),
+    Objectives = Color3.fromRGB(255, 170, 0) -- LARANJA
+}
+
+local ActiveESP = {}
+
+--// Create Highlight
+local function CreateHighlight(object, espType)
+    if ActiveESP[object] then return end
+    if not object:IsDescendantOf(Workspace) then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_HIGHLIGHT"
+    highlight.FillColor = Colors[espType]
+    highlight.OutlineColor = Colors[espType]
+    highlight.FillTransparency = 0.5
+    highlight.Parent = object
+
+    ActiveESP[object] = {
+        Highlight = highlight,
+        Type = espType
+    }
+end
+
+--// Remove
+local function RemoveESP(object)
+    local data = ActiveESP[object]
+    if not data then return end
+
+    if data.Highlight then
+        data.Highlight:Destroy()
+    end
+
+    ActiveESP[object] = nil
+end
+
+--// Clear
+local function ClearAllESP()
+    for obj in pairs(ActiveESP) do
+        RemoveESP(obj)
+    end
+end
+
+--// DETECT TYPE (FIXED)
+local function DetectType(object)
+    -- Ferals
+    if object:FindFirstChild("Monster") then
+        return "Ferals"
+    end
+
+    -- Survivors (ONLY active in match)
+    local player = Players:GetPlayerFromCharacter(object)
+    if player and object ~= LocalPlayer.Character then
+        local humanoid = object:FindFirstChildOfClass("Humanoid")
+
+        -- garante que está vivo e dentro da partida
+        if humanoid and humanoid.Health > 0 and object.Parent == Workspace then
+            return "Survivors"
+        end
+    end
+
+    -- Objectives (Generators)
+    local map = Workspace:FindFirstChild("Map")
+    if map and map:FindFirstChild("Objectives") then
+        if object.Parent == map.Objectives then
+            return "Objectives"
+        end
+    end
+
+    return nil
+end
+
+--// HANDLE OBJECTIVES (remove se completo)
+local function HandleObjective(object)
+    local completed = object:FindFirstChild("Completed")
+
+    if completed and completed:IsA("BoolValue") then
+        -- remove ESP se completar
+        completed:GetPropertyChangedSignal("Value"):Connect(function()
+            if completed.Value == true then
+                RemoveESP(object)
+            end
+        end)
+
+        if completed.Value == true then
+            return false -- não cria ESP
+        end
+    end
+
+    return true
+end
+
+--// Scan
+local function Scan(object)
+    local t = DetectType(object)
+    if not t or not Settings[t] then return end
+
+    if t == "Objectives" then
+        if not HandleObjective(object) then return end
+    end
+
+    CreateHighlight(object, t)
+end
+
+--// Full Scan
+local function FullScan()
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        Scan(obj)
+    end
+end
+
+--// Update Colors
+local function UpdateColors()
+    for _, data in pairs(ActiveESP) do
+        local color = Colors[data.Type]
+        if data.Highlight then
+            data.Highlight.FillColor = color
+            data.Highlight.OutlineColor = color
+        end
+    end
+end
+
+--// Events
+Workspace.DescendantAdded:Connect(function(obj)
+    task.wait(0.1)
+    Scan(obj)
+end)
+
+Workspace.ChildAdded:Connect(function(child)
+    if child.Name == "Map" then
+        task.wait(1)
+        ClearAllESP()
+        FullScan()
+    end
+end)
+
+--// UI
+Tab:Section({ Title = "ESP Types" })
+
+Tab:Toggle({
+    Title = "Ferals",
+    Default = false,
+    Callback = function(v)
+        Settings.Ferals = v
+        ClearAllESP()
+        FullScan()
+    end
+})
+
+Tab:Toggle({
+    Title = "Survivors",
+    Default = false,
+    Callback = function(v)
+        Settings.Survivors = v
+        ClearAllESP()
+        FullScan()
+    end
+})
+
+Tab:Toggle({
+    Title = "Generators",
+    Default = false,
+    Callback = function(v)
+        Settings.Objectives = v
+        ClearAllESP()
+        FullScan()
+    end
+})
+
+Tab:Section({ Title = "Colors" })
+
+Tab:Colorpicker({
+    Title = "Ferals Color",
+    Default = Colors.Ferals,
+    Callback = function(c)
+        Colors.Ferals = c
+        UpdateColors()
+    end
+})
+
+Tab:Colorpicker({
+    Title = "Survivors Color",
+    Default = Colors.Survivors,
+    Callback = function(c)
+        Colors.Survivors = c
+        UpdateColors()
+    end
+})
+
+Tab:Colorpicker({
+    Title = "Generators Color",
+    Default = Colors.Objectives,
+    Callback = function(c)
+        Colors.Objectives = c
+        UpdateColors()
+    end
+})
+
+local UserInputService = game:GetService("UserInputService")
+
+local visible = true
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.G then
+        visible = not visible
+        Window:Toggle(visible)
+    end
+end)
