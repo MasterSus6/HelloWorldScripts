@@ -1,0 +1,235 @@
+--// LOAD WIND UI
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+--// CONFIG
+local GAME_ID = 9856434098
+local KILLER_HIT_COOLDOWN = 0.5
+
+--// SERVICES
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+if game.GameId ~= GAME_ID then
+    LocalPlayer:Kick("wrong game bro")
+    return
+end
+
+--// STATE
+getgenv().AutoFarmSurvivor = false
+getgenv().AutoFarmKiller = false
+getgenv().TeleportToKillerOnFinish = true
+getgenv().DontDieAfterObjectives = false
+getgenv().ReturnToOldPosition = false
+local SavedCFrame = nil
+
+--// WINDOW (DOC CORRETO)
+local Window = WindUI:CreateWindow({
+    Title = "SF AutoFarm",
+    Author = "by Hello World",
+    Folder = "CI_AutoFarm",
+    Icon = "zap"
+})
+
+--// TAB (DOC CORRETO)
+local MainTab = Window:Tab({
+    Title = "Main",
+    Icon = "house"
+})
+
+--// TOGGLES (SEM SECTION, estilo novo)
+MainTab:Toggle({
+    Title = "AutoFarm Survivor",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoFarmSurvivor = v
+    end
+})
+
+MainTab:Toggle({
+    Title = "AutoFarm Killer",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoFarmKiller = v
+    end
+})
+
+MainTab:Toggle({
+    Title = "Disable dying after finishing objectives",
+    Default = false,
+    Callback = function(v)
+        getgenv().DontDieAfterObjectives = v
+    end
+})
+
+MainTab:Toggle({
+    Title = "Teleport to Killer when finished",
+    Default = true,
+    Callback = function(v)
+        getgenv().TeleportToKillerOnFinish = v
+    end
+})
+
+MainTab:Toggle({
+    Title = "Return to previous position",
+    Default = false,
+    Callback = function(v)
+        getgenv().ReturnToOldPosition = v
+    end
+})
+
+Window:SetToggleKey(Enum.KeyCode["G"])
+
+--// FUNCTIONS
+local function isSurvivor(char)
+    return char:FindFirstChild("Taunts") ~= nil
+end
+
+local function isKiller(char)
+    return char:FindFirstChild("Monster") ~= nil
+end
+
+local function getObjectives()
+    local map = workspace:FindFirstChild("Map")
+    if not map then return {} end
+
+    local objectivesFolder = map:FindFirstChild("Objectives")
+    if not objectivesFolder then return {} end
+
+    return objectivesFolder:GetChildren()
+end
+
+local function getKiller()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr.Character and isKiller(plr.Character) then
+            return plr.Character
+        end
+    end
+end
+
+local function getAliveSurvivors()
+    local list = {}
+
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local char = plr.Character
+            local hum = char:FindFirstChild("Humanoid")
+
+            if isSurvivor(char) and hum and hum.Health > 0 then
+                table.insert(list, char)
+            end
+        end
+    end
+
+    return list
+end
+
+local function teleportTo(cf)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = cf
+    end
+end
+
+local function fireAllPrompts(obj)
+    for _, v in pairs(obj:GetDescendants()) do
+        if v:IsA("ProximityPrompt") then
+            v.HoldDuration = 0
+            fireproximityprompt(v)
+        end
+    end
+end
+
+local function getHRP(char)
+    if not char or not char.Parent then return nil end
+    return char:FindFirstChild("HumanoidRootPart")
+end
+
+--// MAIN LOOP
+task.spawn(function()
+    while task.wait(0.2) do
+        local char = LocalPlayer.Character
+        if not char then continue end
+
+        local hum = char:FindFirstChild("Humanoid")
+        if not hum then continue end
+
+        -- SURVIVOR
+        if getgenv().AutoFarmSurvivor and isSurvivor(char) then
+            if getgenv().ReturnToOldPosition and not SavedCFrame then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    SavedCFrame = hrp.CFrame
+                end
+            end
+
+            local objectives = getObjectives()
+            local allCompleted = true
+
+            for _, obj in pairs(objectives) do
+                local completed = obj:FindFirstChild("Completed")
+
+                if completed and not completed.Value then
+                    allCompleted = false
+
+                    repeat
+                        teleportTo(obj:GetPivot())
+                        fireAllPrompts(obj)
+                        task.wait(0.1)
+
+                        completed = obj:FindFirstChild("Completed")
+                    until not completed or completed.Value or not getgenv().AutoFarmSurvivor
+                end
+            end
+
+            if allCompleted then
+                if getgenv().ReturnToOldPosition and SavedCFrame then
+                    teleportTo(SavedCFrame)
+                    SavedCFrame = nil
+                    continue
+                end
+                
+                -- NÃO MORRER
+                if getgenv().DontDieAfterObjectives then
+                    continue
+                end
+
+                if getgenv().TeleportToKillerOnFinish then
+                    local killer = getKiller()
+                    local hrp = getHRP(killer)
+
+                    if hrp then
+                        repeat
+                            teleportTo(hrp.CFrame)
+                            task.wait(KILLER_HIT_COOLDOWN)
+
+                            killer = getKiller()
+                            hrp = getHRP(killer)
+
+                        until hum.Health <= 0 or not hrp or not getgenv().AutoFarmSurvivor
+                    else
+                        hum.Health = 0
+                    end
+                else
+                    hum.Health = 0
+                end
+            end
+        end
+
+        -- KILLER
+        if getgenv().AutoFarmKiller and isKiller(char) then
+            local survivors = getAliveSurvivors()
+
+            for _, target in pairs(survivors) do
+                local hrp = target:FindFirstChild("HumanoidRootPart")
+                local thum = target:FindFirstChild("Humanoid")
+
+                if hrp and thum and thum.Health > 0 then
+                    repeat
+                        teleportTo(hrp.CFrame)
+                        task.wait(KILLER_HIT_COOLDOWN)
+                    until thum.Health <= 0 or not target.Parent or not getgenv().AutoFarmKiller
+                end
+            end
+        end
+    end
+end)
